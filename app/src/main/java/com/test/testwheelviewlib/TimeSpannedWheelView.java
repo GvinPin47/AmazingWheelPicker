@@ -3,61 +3,55 @@ package com.test.testwheelviewlib;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.Resources;
-import android.content.res.TypedArray;
 import android.graphics.Camera;
 import android.graphics.Canvas;
-import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.Shader;
 import android.graphics.Typeface;
-import android.media.AudioManager;
-import android.media.SoundPool;
 import android.os.Build;
+import android.text.Layout;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.StaticLayout;
+import android.text.TextPaint;
 import android.text.TextUtils;
+import android.text.style.CharacterStyle;
+import android.text.style.UpdateAppearance;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.Scroller;
-
 import androidx.annotation.ColorInt;
 import androidx.annotation.ColorRes;
 import androidx.annotation.FloatRange;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RawRes;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.ViewCompat;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/**
- * @author zyyoona7
- * @version v1.0.1
- * @since 2018/8/7.
- */
-public class WheelView<T> extends View implements Runnable {
+@SuppressWarnings("unused")
+public class TimeSpannedWheelView<T> extends View implements Runnable {
 
     private static final String TAG = "WheelView";
 
-    private static final float DEFAULT_LINE_SPACING = dp2px(2f);
-    private static final float DEFAULT_TEXT_SIZE = sp2px(15f);
-    private static final float DEFAULT_TEXT_BOUNDARY_MARGIN = dp2px(2);
-    private static final float DEFAULT_DIVIDER_HEIGHT = dp2px(1);
-    private static final int DEFAULT_NORMAL_TEXT_COLOR = Color.DKGRAY;
-    private static final int DEFAULT_SELECTED_TEXT_COLOR = Color.BLACK;
-    private static final int DEFAULT_VISIBLE_ITEM = 5;
     private static final int DEFAULT_SCROLL_DURATION = 250;
     private static final long DEFAULT_CLICK_CONFIRM = 120;
-    private static final String DEFAULT_INTEGER_FORMAT = "%02d";
+
     //默认折射比值，通过字体大小来实现折射视觉差
     private static final float DEFAULT_REFRACT_RATIO = 1f;
 
@@ -82,7 +76,7 @@ public class WheelView<T> extends View implements Runnable {
     public static final int DIVIDER_TYPE_FILL = 0;
     public static final int DIVIDER_TYPE_WRAP = 1;
 
-    private Paint mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private TextPaint textPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     //字体大小
     private float mTextSize;
     //是否自动调整字体大小以显示完全
@@ -210,20 +204,18 @@ public class WheelView<T> extends View implements Runnable {
     private OnItemSelectedListener<T> mOnItemSelectedListener;
     private OnWheelChangedListener mOnWheelChangedListener;
 
-    //音频
-    private SoundHelper mSoundHelper;
     //是否开启音频效果
     private boolean isSoundEffect = false;
 
-    public WheelView(Context context) {
+    public TimeSpannedWheelView(Context context) {
         this(context, null);
     }
 
-    public WheelView(Context context, @Nullable AttributeSet attrs) {
+    public TimeSpannedWheelView(Context context, @Nullable AttributeSet attrs) {
         this(context, attrs, 0);
     }
 
-    public WheelView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
+    public TimeSpannedWheelView(Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         initAttrsAndDefault(context, attrs);
         initValue(context);
@@ -236,8 +228,7 @@ public class WheelView<T> extends View implements Runnable {
      * @param attrs   attrs
      */
     private void initAttrsAndDefault(Context context, AttributeSet attrs) {
-        mRefractRatio = DEFAULT_REFRACT_RATIO;
-        mRefractRatio = isCurved ? Math.min(0.9f, mRefractRatio) : mRefractRatio;
+        mRefractRatio = isCurved ? DEFAULT_REFRACT_RATIO : mRefractRatio;
         if (mRefractRatio > 1f) {
             mRefractRatio = 1.0f;
         } else if (mRefractRatio < 0f) {
@@ -258,54 +249,40 @@ public class WheelView<T> extends View implements Runnable {
         mDrawRect = new Rect();
         mCamera = new Camera();
         mMatrix = new Matrix();
-        if (!isInEditMode()) {
-            mSoundHelper = SoundHelper.obtain();
-            initDefaultVolume(context);
-        }
+
         calculateTextSize();
         updateTextAlign();
     }
 
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        if (mSoundHelper != null) {
-            mSoundHelper.release();
-        }
-    }
 
     /**
-     * 初始化默认音量
-     *
-     * @param context 上下文
-     */
-    private void initDefaultVolume(Context context) {
-        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        if (audioManager != null) {
-            //获取系统媒体当前音量
-            int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
-            //获取系统媒体最大音量
-            int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-            //设置播放音量
-            mSoundHelper.setPlayVolume(currentVolume * 1.0f / maxVolume);
-        } else {
-            mSoundHelper.setPlayVolume(0.3f);
-        }
-    }
-
-    /**
-     * 测量文字最大所占空间
+     * Maximum space occupied by measurement text
      */
     private void calculateTextSize() {
-        mPaint.setTextSize(mTextSize);
-        for (int i = 0; i < mDataList.size(); i++) {
-            int textWidth = (int) mPaint.measureText(getDataText(mDataList.get(i)));
-            mMaxTextWidth = Math.max(textWidth, mMaxTextWidth);
-        }
+        if (isCurved) {
+            textPaint.setTextSize(mTextSize);
+            for (int i = 0; i < mDataList.size(); i++) {
+                int textWidth = (int) textPaint.measureText(getDataText(mDataList.get(i)));
+                mMaxTextWidth = Math.max(textWidth, mMaxTextWidth);
+            }
 
-        mFontMetrics = mPaint.getFontMetrics();
-        //itemHeight实际等于字体高度+一个行间距
-        mItemHeight = (int) (mFontMetrics.bottom - mFontMetrics.top + mLineSpacing);
+            mFontMetrics = textPaint.getFontMetrics();
+            //itemHeight实际等于字体高度+一个行间距
+            mItemHeight = (int) (mFontMetrics.bottom - mFontMetrics.top + mLineSpacing);
+        } else {
+            textPaint.setTextSize(mTextSize);
+            for (int i = 0; i < mDataList.size(); i++) {
+                CharSequence text = getDataText(mDataList.get(i));
+                int textWidth = (int) textPaint.measureText(text, 0, text.length());
+                mMaxTextWidth = Math.max(textWidth, mMaxTextWidth);
+            }
+
+            if (mDataList.size() != 0) {
+                SpannableString spannableString = ((SpannableString) mDataList.get(0));
+                StaticLayout layout = new StaticLayout(spannableString, textPaint, (int) StaticLayout.getDesiredWidth(spannableString, textPaint), Layout.Alignment.ALIGN_NORMAL, 1, 0, false);
+                mItemHeight = layout.getHeight();
+            }
+        }
     }
 
     /**
@@ -314,14 +291,14 @@ public class WheelView<T> extends View implements Runnable {
     private void updateTextAlign() {
         switch (mTextAlign) {
             case TEXT_ALIGN_LEFT:
-                mPaint.setTextAlign(Paint.Align.LEFT);
+                textPaint.setTextAlign(Paint.Align.LEFT);
                 break;
             case TEXT_ALIGN_RIGHT:
-                mPaint.setTextAlign(Paint.Align.RIGHT);
+                textPaint.setTextAlign(Paint.Align.RIGHT);
                 break;
             case TEXT_ALIGN_CENTER:
             default:
-                mPaint.setTextAlign(Paint.Align.CENTER);
+                textPaint.setTextAlign(Paint.Align.CENTER);
                 break;
         }
     }
@@ -386,8 +363,15 @@ public class WheelView<T> extends View implements Runnable {
                 break;
         }
 
-        //文字中心距离baseline的距离
-        mCenterToBaselineY = (int) (mFontMetrics.ascent + (mFontMetrics.descent - mFontMetrics.ascent) / 2);
+        if (isCurved) {
+            mCenterToBaselineY = (int) (mFontMetrics.ascent + (mFontMetrics.descent - mFontMetrics.ascent) / 2);
+        } else {
+            if (mDataList.size() != 0) {
+                SpannableString spannableString = ((SpannableString) mDataList.get(0));
+                StaticLayout layout = new StaticLayout(spannableString, textPaint, (int) StaticLayout.getDesiredWidth(spannableString, textPaint), Layout.Alignment.ALIGN_NORMAL, 1, 0, false);
+                mCenterToBaselineY = (int) (layout.getLineBaseline(0) / 2);
+            }
+        }
     }
 
     /**
@@ -403,23 +387,18 @@ public class WheelView<T> extends View implements Runnable {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        //绘制选中区域
-        drawSelectedRect(canvas);
-        //绘制分割线
-        drawDivider(canvas);
-
-        //滚动了多少个item，滚动的Y值高度除去每行Item的高度
+        //How many items are scrolled, the Y value height of scrolling minus the height of each item
         int scrolledItem = mScrollOffsetY / dividedItemHeight();
-        //没有滚动完一个item时的偏移值，平滑滑动
+        //The offset value when an item is not scrolled, smoothly sliding
         int scrolledOffset = mScrollOffsetY % dividedItemHeight();
-        //向上取整
+        //Improvement arrangement
         int halfItem = (mVisibleItems + 1) / 2;
-        //计算的最小index
+        //Calculated minimum index
         int minIndex;
-        //计算的最大index
+        //Calculated maximum index
         int maxIndex;
         if (scrolledOffset < 0) {
-            //小于0
+            //Less than 0
             minIndex = scrolledItem - halfItem - 1;
             maxIndex = scrolledItem + halfItem;
         } else if (scrolledOffset > 0) {
@@ -430,7 +409,7 @@ public class WheelView<T> extends View implements Runnable {
             maxIndex = scrolledItem + halfItem;
         }
 
-        //绘制item
+        //Draw item
         for (int i = minIndex; i < maxIndex; i++) {
             if (isCurved) {
                 draw3DItem(canvas, i, scrolledOffset);
@@ -438,123 +417,75 @@ public class WheelView<T> extends View implements Runnable {
                 drawItem(canvas, i, scrolledOffset);
             }
         }
-
     }
 
     /**
-     * 绘制选中区域
+     * Draw 2D effect
      *
-     * @param canvas 画布
-     */
-    private void drawSelectedRect(Canvas canvas) {
-        if (isDrawSelectedRect) {
-            mPaint.setColor(mSelectedRectColor);
-            canvas.drawRect(mClipLeft, mSelectedItemTopLimit, mClipRight, mSelectedItemBottomLimit, mPaint);
-        }
-    }
-
-    /**
-     * 绘制分割线
-     *
-     * @param canvas 画布
-     */
-    private void drawDivider(Canvas canvas) {
-        if (isShowDivider) {
-            mPaint.setColor(mDividerColor);
-            float originStrokeWidth = mPaint.getStrokeWidth();
-            mPaint.setStrokeJoin(Paint.Join.ROUND);
-            mPaint.setStrokeCap(Paint.Cap.ROUND);
-            mPaint.setStrokeWidth(mDividerSize);
-            if (mDividerType == DIVIDER_TYPE_FILL) {
-                canvas.drawLine(mClipLeft, mSelectedItemTopLimit, mClipRight, mSelectedItemTopLimit, mPaint);
-                canvas.drawLine(mClipLeft, mSelectedItemBottomLimit, mClipRight, mSelectedItemBottomLimit, mPaint);
-            } else {
-                //边界处理 超过边界直接按照DIVIDER_TYPE_FILL类型处理
-                int startX = (int) (mCenterX - mMaxTextWidth / 2 - mDividerPaddingForWrap);
-                int stopX = (int) (mCenterX + mMaxTextWidth / 2 + mDividerPaddingForWrap);
-
-                int wrapStartX = startX < mClipLeft ? mClipLeft : startX;
-                int wrapStopX = stopX > mClipRight ? mClipRight : stopX;
-                canvas.drawLine(wrapStartX, mSelectedItemTopLimit, wrapStopX, mSelectedItemTopLimit, mPaint);
-                canvas.drawLine(wrapStartX, mSelectedItemBottomLimit, wrapStopX, mSelectedItemBottomLimit, mPaint);
-            }
-            mPaint.setStrokeWidth(originStrokeWidth);
-        }
-    }
-
-    /**
-     * 绘制2D效果
-     *
-     * @param canvas         画布
-     * @param index          下标
-     * @param scrolledOffset 滚动偏移
+     * @param canvas         CANVAS
+     * @param index          INDEX
+     * @param scrolledOffset Scroll offset
      */
     private void drawItem(Canvas canvas, int index, int scrolledOffset) {
-        String text = getDataByIndex(index);
-        if (text == null) {
+        SpannableString spannableString = getSpannableDataByIndex(index);
+
+        if (spannableString == null) {
             return;
         }
 
-        //index 的 item 距离中间项的偏移
+        //The offset of the item of index from the middle item
         int item2CenterOffsetY = (index - mScrollOffsetY / dividedItemHeight()) * mItemHeight - scrolledOffset;
-        //记录初始测量的字体起始X
+        //Record the font start X of the initial measurement
         int startX = mStartX;
-        //重新测量字体宽度和基线偏移
-        int centerToBaselineY = isAutoFitTextSize ? remeasureTextSize(text) : mCenterToBaselineY;
+        //Re-measure font width and baseline offset
+        int centerToBaselineY = isAutoFitTextSize ? remeasureTextSize(spannableString) : mCenterToBaselineY;
 
-        if (Math.abs(item2CenterOffsetY) <= 0) {
-            //绘制选中的条目
-            mPaint.setColor(mSelectedItemTextColor);
-            clipAndDraw2DText(canvas, text, mSelectedItemTopLimit, mSelectedItemBottomLimit, item2CenterOffsetY, centerToBaselineY);
-        } else if (item2CenterOffsetY > 0 && item2CenterOffsetY < mItemHeight) {
-            //绘制与下边界交汇的条目
-            mPaint.setColor(mSelectedItemTextColor);
-            clipAndDraw2DText(canvas, text, mSelectedItemTopLimit, mSelectedItemBottomLimit, item2CenterOffsetY, centerToBaselineY);
+        setGradient(spannableString);
+        clipAndDraw2DText(canvas, spannableString, mSelectedItemTopLimit, mSelectedItemBottomLimit, item2CenterOffsetY, centerToBaselineY);
+    }
 
-            mPaint.setColor(mTextColor);
-            //缩小字体，实现折射效果
-            float textSize = mPaint.getTextSize();
-            mPaint.setTextSize(textSize * mRefractRatio);
-            //mIsBoldForSelectedItem==true 改变字体
-            changeTypefaceIfBoldForSelectedItem();
-            clipAndDraw2DText(canvas, text, mSelectedItemBottomLimit, mClipBottom, item2CenterOffsetY, centerToBaselineY);
-            mPaint.setTextSize(textSize);
-            //mIsBoldForSelectedItem==true 恢复字体
-            resetTypefaceIfBoldForSelectedItem();
-        } else if (item2CenterOffsetY < 0 && item2CenterOffsetY > -mItemHeight) {
-            //绘制与上边界交汇的条目
-            mPaint.setColor(mSelectedItemTextColor);
-            clipAndDraw2DText(canvas, text, mSelectedItemTopLimit, mSelectedItemBottomLimit, item2CenterOffsetY, centerToBaselineY);
+    private void setGradient(SpannableString spannableString) {
+        Log.d("currentPosition", String.valueOf(mCurrentScrollPosition));
 
-            mPaint.setColor(mTextColor);
-            //缩小字体，实现折射效果
-            float textSize = mPaint.getTextSize();
-            mPaint.setTextSize(textSize * mRefractRatio);
-            //mIsBoldForSelectedItem==true 改变字体
-            changeTypefaceIfBoldForSelectedItem();
-            clipAndDraw2DText(canvas, text, mClipTop, mSelectedItemTopLimit, item2CenterOffsetY, centerToBaselineY);
-            mPaint.setTextSize(textSize);
-            //mIsBoldForSelectedItem==true 恢复字体
-            resetTypefaceIfBoldForSelectedItem();
-        } else {
-            //绘制其他条目
-            mPaint.setColor(mTextColor);
-            //缩小字体，实现折射效果
-            float textSize = mPaint.getTextSize();
-            mPaint.setTextSize(textSize * mRefractRatio);
-            //mIsBoldForSelectedItem==true 改变字体
-            changeTypefaceIfBoldForSelectedItem();
-            clipAndDraw2DText(canvas, text, mClipTop, mClipBottom, item2CenterOffsetY, centerToBaselineY);
-            mPaint.setTextSize(textSize);
-            //mIsBoldForSelectedItem==true 恢复字体
-            resetTypefaceIfBoldForSelectedItem();
+        //Calculate bottom item data index
+        int tempBottom = mCurrentScrollPosition + 1;
+        int bottomPosition = 0;
+        if (tempBottom < mDataList.size()) {
+            bottomPosition = tempBottom;
+        }
+        Log.d("bottomPosition", String.valueOf(bottomPosition));
+
+        //Calculate top item data index
+        int tempTop = mCurrentScrollPosition - 1;
+        int topPosition = mDataList.size() - 1;
+        if (tempTop != -1) {
+            topPosition = tempTop;
+        }
+        Log.d("topPosition", String.valueOf(topPosition));
+
+        SpannableString selectedItem = (SpannableString) mDataList.get(mCurrentScrollPosition);
+        SpannableString topItem = (SpannableString) mDataList.get(topPosition);
+        SpannableString bottomItem = (SpannableString) mDataList.get(bottomPosition);
+
+        LinearGradientTopToBottomSpan[] topToBottomSpans = selectedItem.getSpans(0, selectedItem.length(), LinearGradientTopToBottomSpan.class);
+        LinearGradientBottomToTopSpan[] bottomToTopSpans = selectedItem.getSpans(0, selectedItem.length(), LinearGradientBottomToTopSpan.class);
+
+        if (topToBottomSpans.length > 0) {
+            for (LinearGradientTopToBottomSpan item : topToBottomSpans) selectedItem.removeSpan(item);
+        }
+        if (bottomToTopSpans.length > 0) {
+            for (LinearGradientBottomToTopSpan item : bottomToTopSpans) selectedItem.removeSpan(item);
         }
 
-        if (isAutoFitTextSize) {
-            //恢复重新测量之前的样式
-            mPaint.setTextSize(mTextSize);
-            mStartX = startX;
-        }
+        bottomItem.setSpan(new LinearGradientTopToBottomSpan(), 0, spannableString.length(), Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+        topItem.setSpan(new LinearGradientBottomToTopSpan(), 0, spannableString.length(), Spanned.SPAN_INCLUSIVE_INCLUSIVE);
+    }
+
+    private void updateStartX(SpannableString selectedItem, SpannableString otherItem) {
+        float selectedItemWidth = StaticLayout.getDesiredWidth(selectedItem, textPaint);
+        float otherItemWidth = StaticLayout.getDesiredWidth(otherItem, textPaint);
+
+        mStartX = (int) (selectedItemWidth - otherItemWidth);
     }
 
     /**
@@ -567,12 +498,104 @@ public class WheelView<T> extends View implements Runnable {
      * @param item2CenterOffsetY 距离中间项的偏移
      * @param centerToBaselineY  文字中心距离baseline的距离
      */
-    private void clipAndDraw2DText(Canvas canvas, String text, int clipTop, int clipBottom,
+    private void clipAndDraw2DText(Canvas canvas, SpannableString text, int clipTop, int clipBottom,
                                    int item2CenterOffsetY, int centerToBaselineY) {
         canvas.save();
-        canvas.clipRect(mClipLeft, clipTop, mClipRight, clipBottom);
-        canvas.drawText(text, 0, text.length(), mStartX, mCenterY + item2CenterOffsetY - centerToBaselineY, mPaint);
+        //canvas.clipRect(mClipLeft, clipTop, mClipRight, clipBottom);
+        canvas.translate(mStartX, mCenterY + item2CenterOffsetY - centerToBaselineY);
+
+        TextPaint tp = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        StaticLayout layout = createStaticLayout(text, getWidth(), textPaint);
+        layout.draw(canvas);
+
         canvas.restore();
+    }
+
+
+    class LinearGradientTopToBottomSpan extends CharacterStyle implements UpdateAppearance {
+        @Override
+        public void updateDrawState(TextPaint textPaint) {
+            if (textPaint == null) return;
+
+            textPaint.setShader(
+                    new LinearGradient(
+                            0f,
+                            0f,
+                            0f,
+                            mItemHeight,
+                            ContextCompat.getColor(getContext(), R.color.test_color_with_alpha_50),
+                            ContextCompat.getColor(getContext(), android.R.color.transparent),
+                            Shader.TileMode.CLAMP
+                    )
+            );
+        }
+    }
+
+    class LinearGradientBottomToTopSpan extends CharacterStyle implements UpdateAppearance {
+        @Override
+        public void updateDrawState(TextPaint textPaint) {
+            if (textPaint == null) return;
+
+            textPaint.setShader(
+                    new LinearGradient(
+                            0f,
+                            mItemHeight,
+                            0f,
+                            0f,
+                            ContextCompat.getColor(getContext(), R.color.test_color_with_alpha_50),
+                            ContextCompat.getColor(getContext(), android.R.color.transparent),
+                            Shader.TileMode.CLAMP
+                    )
+            );
+        }
+    }
+
+    private StaticLayout createStaticLayout(SpannableString text, Integer textWidth, TextPaint paint) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return StaticLayout.Builder.obtain(
+                    text,
+                    0,
+                    text.length(),
+                    paint,
+                    textWidth
+            )
+                    .setIncludePad(false)
+                    .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                    .setMaxLines(1)
+                    .setEllipsize(TextUtils.TruncateAt.END)
+                    .build();
+        } else {
+            StaticLayout layout;
+            int maxLength = Math.min(text.length(), 200);
+
+            do {
+                layout = new StaticLayout(
+                        ellipsize(text, maxLength, '…'),
+                        paint,
+                        textWidth,
+                        Layout.Alignment.ALIGN_NORMAL,
+                        1, 0, false
+                );
+                maxLength -= 10;
+            } while (layout.getLineCount() > 1);
+
+            return layout;
+        }
+    }
+
+    private CharSequence ellipsize(
+            SpannableString text,
+            Integer size,
+            Character ending
+    ) {
+        if (text.length() == 0 || size <= 0) {
+            return new SpannableString("");
+        } else if (text.length() <= size) {
+            return text;
+        } else {
+            CharSequence sbString = text.subSequence(0, Math.max(size - 1, 0));
+            return TextUtils.concat(sbString, ending.toString());
+        }
     }
 
     /**
@@ -581,8 +604,8 @@ public class WheelView<T> extends View implements Runnable {
      * @param contentText 被测量文字内容
      * @return 文字中心距离baseline的距离
      */
-    private int remeasureTextSize(String contentText) {
-        float textWidth = mPaint.measureText(contentText);
+    private int remeasureTextSize(CharSequence contentText) {
+        float textWidth = StaticLayout.getDesiredWidth(contentText, textPaint);
         float drawWidth = getWidth();
         float textMargin = mTextBoundaryMargin * 2;
         //稍微增加了一点文字边距 最大为宽度的1/10
@@ -601,8 +624,8 @@ public class WheelView<T> extends View implements Runnable {
             if (textSize <= 0) {
                 break;
             }
-            mPaint.setTextSize(textSize);
-            textWidth = mPaint.measureText(contentText);
+            textPaint.setTextSize(textSize);
+            textWidth = textPaint.measureText(contentText, 0, contentText.length());
         }
         //重新计算文字起始X
         recalculateStartX(textMargin / 2.0f);
@@ -636,7 +659,7 @@ public class WheelView<T> extends View implements Runnable {
      * @return 文字中心距离baseline的距离
      */
     private int recalculateCenterToBaselineY() {
-        Paint.FontMetrics fontMetrics = mPaint.getFontMetrics();
+        Paint.FontMetrics fontMetrics = textPaint.getFontMetrics();
         //高度起点也变了
         return (int) (fontMetrics.ascent + (fontMetrics.descent - fontMetrics.ascent) / 2);
     }
@@ -649,7 +672,7 @@ public class WheelView<T> extends View implements Runnable {
      * @param scrolledOffset 滚动偏移
      */
     private void draw3DItem(Canvas canvas, int index, int scrolledOffset) {
-        String text = getDataByIndex(index);
+        CharSequence text = getDataByIndex(index);
         if (text == null) {
             return;
         }
@@ -677,75 +700,75 @@ public class WheelView<T> extends View implements Runnable {
         int centerToBaselineY = isAutoFitTextSize ? remeasureTextSize(text) : mCenterToBaselineY;
         if (Math.abs(item2CenterOffsetY) <= 0) {
             //绘制选中的条目
-            mPaint.setColor(mSelectedItemTextColor);
-            mPaint.setAlpha(255);
+            textPaint.setColor(mSelectedItemTextColor);
+            textPaint.setAlpha(255);
             clipAndDraw3DText(canvas, text, mSelectedItemTopLimit, mSelectedItemBottomLimit,
                     rotateX, translateY, translateZ, centerToBaselineY);
         } else if (item2CenterOffsetY > 0 && item2CenterOffsetY < mItemHeight) {
             //绘制与下边界交汇的条目
-            mPaint.setColor(mSelectedItemTextColor);
-            mPaint.setAlpha(255);
+            textPaint.setColor(mSelectedItemTextColor);
+            textPaint.setAlpha(255);
             clipAndDraw3DText(canvas, text, mSelectedItemTopLimit, mSelectedItemBottomLimit,
                     rotateX, translateY, translateZ, centerToBaselineY);
 
-            mPaint.setColor(mTextColor);
-            mPaint.setAlpha(alpha);
+            textPaint.setColor(mTextColor);
+            textPaint.setAlpha(alpha);
             //缩小字体，实现折射效果
-            float textSize = mPaint.getTextSize();
-            mPaint.setTextSize(textSize * mRefractRatio);
+            float textSize = textPaint.getTextSize();
+            textPaint.setTextSize(textSize * mRefractRatio);
             //mIsBoldForSelectedItem==true 改变字体
             changeTypefaceIfBoldForSelectedItem();
             //字体变化，重新计算距离基线偏移
             int reCenterToBaselineY = recalculateCenterToBaselineY();
             clipAndDraw3DText(canvas, text, mSelectedItemBottomLimit, mClipBottom,
                     rotateX, translateY, translateZ, reCenterToBaselineY);
-            mPaint.setTextSize(textSize);
+            textPaint.setTextSize(textSize);
             //mIsBoldForSelectedItem==true 恢复字体
             resetTypefaceIfBoldForSelectedItem();
         } else if (item2CenterOffsetY < 0 && item2CenterOffsetY > -mItemHeight) {
             //绘制与上边界交汇的条目
-            mPaint.setColor(mSelectedItemTextColor);
-            mPaint.setAlpha(255);
+            textPaint.setColor(mSelectedItemTextColor);
+            textPaint.setAlpha(255);
             clipAndDraw3DText(canvas, text, mSelectedItemTopLimit, mSelectedItemBottomLimit,
                     rotateX, translateY, translateZ, centerToBaselineY);
 
-            mPaint.setColor(mTextColor);
-            mPaint.setAlpha(alpha);
+            textPaint.setColor(mTextColor);
+            textPaint.setAlpha(alpha);
 
             //缩小字体，实现折射效果
-            float textSize = mPaint.getTextSize();
-            mPaint.setTextSize(textSize * mRefractRatio);
+            float textSize = textPaint.getTextSize();
+            textPaint.setTextSize(textSize * mRefractRatio);
             //mIsBoldForSelectedItem==true 改变字体
             changeTypefaceIfBoldForSelectedItem();
             //字体变化，重新计算距离基线偏移
             int reCenterToBaselineY = recalculateCenterToBaselineY();
             clipAndDraw3DText(canvas, text, mClipTop, mSelectedItemTopLimit,
                     rotateX, translateY, translateZ, reCenterToBaselineY);
-            mPaint.setTextSize(textSize);
+            textPaint.setTextSize(textSize);
             //mIsBoldForSelectedItem==true 恢复字体
             resetTypefaceIfBoldForSelectedItem();
         } else {
             //绘制其他条目
-            mPaint.setColor(mTextColor);
-            mPaint.setAlpha(alpha);
+            textPaint.setColor(mTextColor);
+            textPaint.setAlpha(alpha);
 
             //缩小字体，实现折射效果
-            float textSize = mPaint.getTextSize();
-            mPaint.setTextSize(textSize * mRefractRatio);
+            float textSize = textPaint.getTextSize();
+            textPaint.setTextSize(textSize * mRefractRatio);
             //mIsBoldForSelectedItem==true 改变字体
             changeTypefaceIfBoldForSelectedItem();
             //字体变化，重新计算距离基线偏移
             int reCenterToBaselineY = recalculateCenterToBaselineY();
             clipAndDraw3DText(canvas, text, mClipTop, mClipBottom,
                     rotateX, translateY, translateZ, reCenterToBaselineY);
-            mPaint.setTextSize(textSize);
+            textPaint.setTextSize(textSize);
             //mIsBoldForSelectedItem==true 恢复字体
             resetTypefaceIfBoldForSelectedItem();
         }
 
         if (isAutoFitTextSize) {
             //恢复重新测量之前的样式
-            mPaint.setTextSize(mTextSize);
+            textPaint.setTextSize(mTextSize);
             mStartX = startX;
         }
     }
@@ -762,7 +785,7 @@ public class WheelView<T> extends View implements Runnable {
      * @param offsetZ           Z轴偏移
      * @param centerToBaselineY 文字中心距离baseline的距离
      */
-    private void clipAndDraw3DText(Canvas canvas, String text, int clipTop, int clipBottom,
+    private void clipAndDraw3DText(Canvas canvas, CharSequence text, int clipTop, int clipBottom,
                                    float rotateX, float offsetY, float offsetZ, int centerToBaselineY) {
 
         canvas.save();
@@ -781,7 +804,7 @@ public class WheelView<T> extends View implements Runnable {
      * @param offsetZ           Z轴偏移
      * @param centerToBaselineY 文字中心距离baseline的距离
      */
-    private void draw3DText(Canvas canvas, String text, float rotateX, float offsetY,
+    private void draw3DText(Canvas canvas, CharSequence text, float rotateX, float offsetY,
                             float offsetZ, int centerToBaselineY) {
         mCamera.save();
         mCamera.translate(0, 0, offsetZ);
@@ -803,19 +826,18 @@ public class WheelView<T> extends View implements Runnable {
         mMatrix.postTranslate(centerX, centerY);
 
         canvas.concat(mMatrix);
-        canvas.drawText(text, 0, text.length(), mStartX, centerY - centerToBaselineY, mPaint);
-
+        canvas.drawText(text, 0, text.length(), mStartX, centerY - centerToBaselineY, textPaint);
     }
 
     private void changeTypefaceIfBoldForSelectedItem() {
         if (mIsBoldForSelectedItem) {
-            mPaint.setTypeface(mNormalTypeface);
+            textPaint.setTypeface(mNormalTypeface);
         }
     }
 
     private void resetTypefaceIfBoldForSelectedItem() {
         if (mIsBoldForSelectedItem) {
-            mPaint.setTypeface(mBoldTypeface);
+            textPaint.setTypeface(mBoldTypeface);
         }
     }
 
@@ -825,13 +847,13 @@ public class WheelView<T> extends View implements Runnable {
      * @param index 下标
      * @return 绘制的文字内容
      */
-    private String getDataByIndex(int index) {
+    private CharSequence getDataByIndex(int index) {
         int dataSize = mDataList.size();
         if (dataSize == 0) {
             return null;
         }
 
-        String itemText = null;
+        CharSequence itemText = null;
         if (isCyclic) {
             int i = index % dataSize;
             if (i < 0) {
@@ -841,6 +863,27 @@ public class WheelView<T> extends View implements Runnable {
         } else {
             if (index >= 0 && index < dataSize) {
                 itemText = getDataText(mDataList.get(index));
+            }
+        }
+        return itemText;
+    }
+
+    private SpannableString getSpannableDataByIndex(int index) {
+        int dataSize = mDataList.size();
+        if (dataSize == 0) {
+            return null;
+        }
+
+        SpannableString itemText = null;
+        if (isCyclic) {
+            int i = index % dataSize;
+            if (i < 0) {
+                i += dataSize;
+            }
+            itemText = (SpannableString) mDataList.get(i);
+        } else {
+            if (index >= 0 && index < dataSize) {
+                itemText = (SpannableString) mDataList.get(index);
             }
         }
         return itemText;
@@ -864,6 +907,7 @@ public class WheelView<T> extends View implements Runnable {
         } else if (item instanceof String) {
             return (String) item;
         }
+
         return item.toString();
     }
 
@@ -1023,19 +1067,8 @@ public class WheelView<T> extends View implements Runnable {
                 mOnWheelChangedListener.onWheelItemChanged(oldPosition, newPosition);
             }
             onWheelItemChanged(oldPosition, newPosition);
-            //播放音频
-            playSoundEffect();
             //更新下标
             mCurrentScrollPosition = newPosition;
-        }
-    }
-
-    /**
-     * 播放滚动音效
-     */
-    public void playSoundEffect() {
-        if (mSoundHelper != null && isSoundEffect) {
-            mSoundHelper.playSoundEffect();
         }
     }
 
@@ -1076,33 +1109,33 @@ public class WheelView<T> extends View implements Runnable {
     }
 
     /**
-     * 使用run方法而不是computeScroll是因为，invalidate也会执行computeScroll导致回调执行不准确
+     * The run method is used instead of compute Scroll because invalidate will also execute compute Scroll, resulting in inaccurate callback execution
      */
     @Override
     public void run() {
-        //停止滚动更新当前下标
+        //Stop scrolling to update the current subscript
         if (mScroller.isFinished() && !isForceFinishScroll && !isFlingScroll) {
             if (mItemHeight == 0) return;
-            //滚动状态停止
+            //Scrolling stopped
             if (mOnWheelChangedListener != null) {
                 mOnWheelChangedListener.onWheelScrollStateChanged(SCROLL_STATE_IDLE);
             }
             onWheelScrollStateChanged(SCROLL_STATE_IDLE);
             int currentItemPosition = getCurrentPosition();
-            //当前选中的Position没变时不回调 onItemSelected()
+            //No callback when the currently selected Position has not changed onItemSelected()
             if (currentItemPosition == mSelectedItemPosition) {
                 return;
             }
             mSelectedItemPosition = currentItemPosition;
-            //停止后重新赋值
+            //Re-assign after stopping
             mCurrentScrollPosition = mSelectedItemPosition;
 
-            //停止滚动，选中条目回调
+            //Stop scrolling, select the item to call back
             if (mOnItemSelectedListener != null) {
                 mOnItemSelectedListener.onItemSelected(this, mDataList.get(mSelectedItemPosition), mSelectedItemPosition);
             }
             onItemSelected(mDataList.get(mSelectedItemPosition), mSelectedItemPosition);
-            //滚动状态回调
+            //Scroll state callback
             if (mOnWheelChangedListener != null) {
                 mOnWheelChangedListener.onWheelSelected(mSelectedItemPosition);
             }
@@ -1122,9 +1155,9 @@ public class WheelView<T> extends View implements Runnable {
             invalidateIfYChanged();
             ViewCompat.postOnAnimation(this, this);
         } else if (isFlingScroll) {
-            //滚动完成后，根据是否为快速滚动处理是否需要调整最终位置
+            //After the scrolling is completed, the final position needs to be adjusted according to whether it is a fast scrolling process
             isFlingScroll = false;
-            //快速滚动后需要调整滚动完成后的最终位置，重新启动scroll滑动到中心位置
+            //After fast scrolling, you need to adjust the final position after scrolling, restart the scroll to slide to the center position
             mScroller.startScroll(0, mScrollOffsetY, 0, calculateDistanceToEndPoint(mScrollOffsetY % dividedItemHeight()));
             invalidateIfYChanged();
             ViewCompat.postOnAnimation(this, this);
@@ -1132,9 +1165,9 @@ public class WheelView<T> extends View implements Runnable {
     }
 
     /**
-     * 根据偏移计算当前位置下标
+     * Calculate the current position index based on the offset
      *
-     * @return 偏移量对应的当前下标 if dataList is empty return -1
+     * @return The current subscript corresponding to the offset if dataList is empty return -1
      */
     private int getCurrentPosition() {
         if (mDataList.isEmpty()) {
@@ -1155,9 +1188,9 @@ public class WheelView<T> extends View implements Runnable {
     }
 
     /**
-     * mItemHeight 为被除数时避免为0
+     * mItemHeight Avoid zero when it is the dividend
      *
-     * @return 被除数不为0
+     * @return Dividend is not 0
      */
     private int dividedItemHeight() {
         return mItemHeight > 0 ? mItemHeight : 1;
@@ -1179,37 +1212,6 @@ public class WheelView<T> extends View implements Runnable {
      */
     public void setSoundEffect(boolean isSoundEffect) {
         this.isSoundEffect = isSoundEffect;
-    }
-
-    /**
-     * 设置声音效果资源
-     *
-     * @param rawResId 声音效果资源 越小效果越好 {@link RawRes}
-     */
-    public void setSoundEffectResource(@RawRes int rawResId) {
-        if (mSoundHelper != null) {
-            mSoundHelper.load(getContext(), rawResId);
-        }
-    }
-
-    /**
-     * 获取播放音量
-     *
-     * @return 播放音量 range 0.0-1.0
-     */
-    public float getPlayVolume() {
-        return mSoundHelper == null ? 0 : mSoundHelper.getPlayVolume();
-    }
-
-    /**
-     * 设置播放音量
-     *
-     * @param playVolume 播放音量 range 0.0-1.0
-     */
-    public void setPlayVolume(@FloatRange(from = 0.0, to = 1.0) float playVolume) {
-        if (mSoundHelper != null) {
-            mSoundHelper.setPlayVolume(playVolume);
-        }
     }
 
     /**
@@ -1257,7 +1259,11 @@ public class WheelView<T> extends View implements Runnable {
         if (dataList == null) {
             return;
         }
+
         mDataList = dataList;
+
+        setLayoutParams(new LinearLayout.LayoutParams((int)StaticLayout.getDesiredWidth((SpannableString) mDataList.get(0), textPaint), FrameLayout.LayoutParams.WRAP_CONTENT));
+
         if (!isResetSelectedPosition && mDataList.size() > 0) {
             //不重置选中下标
             if (mSelectedItemPosition >= mDataList.size()) {
@@ -1363,7 +1369,7 @@ public class WheelView<T> extends View implements Runnable {
      * @return 字体
      */
     public Typeface getTypeface() {
-        return mPaint.getTypeface();
+        return textPaint.getTypeface();
     }
 
     /**
@@ -1382,7 +1388,7 @@ public class WheelView<T> extends View implements Runnable {
      * @param isBoldForSelectedItem 是否设置选中条目字体加粗，其他条目不会加粗
      */
     public void setTypeface(Typeface typeface, boolean isBoldForSelectedItem) {
-        if (typeface == null || mPaint.getTypeface() == typeface) {
+        if (typeface == null || textPaint.getTypeface() == typeface) {
             return;
         }
         //强制滚动完成
@@ -1398,9 +1404,9 @@ public class WheelView<T> extends View implements Runnable {
                 mBoldTypeface = Typeface.create(typeface, Typeface.BOLD);
             }
             //测量时 使用加粗字体测量，因为加粗字体比普通字体宽，以大的为准进行测量
-            mPaint.setTypeface(mBoldTypeface);
+            textPaint.setTypeface(mBoldTypeface);
         } else {
-            mPaint.setTypeface(typeface);
+            textPaint.setTypeface(typeface);
         }
         calculateTextSize();
         calculateDrawStart();
@@ -2214,9 +2220,9 @@ public class WheelView<T> extends View implements Runnable {
      * WheelView 滚动状态
      *
      * @param state 滚动状态
-     *              {@link WheelView#SCROLL_STATE_IDLE}
-     *              {@link WheelView#SCROLL_STATE_DRAGGING}
-     *              {@link WheelView#SCROLL_STATE_SCROLLING}
+     *              {@link TimeSpannedWheelView#SCROLL_STATE_IDLE}
+     *              {@link TimeSpannedWheelView#SCROLL_STATE_DRAGGING}
+     *              {@link TimeSpannedWheelView#SCROLL_STATE_SCROLLING}
      */
     protected void onWheelScrollStateChanged(int state) {
 
@@ -2231,10 +2237,6 @@ public class WheelView<T> extends View implements Runnable {
     protected void onItemSelected(T data, int position) {
 
     }
-
-    /*
-      --------- 滚动变化方法同监听器方法（适用于子类） ------
-     */
 
     /**
      * dp转换px
@@ -2303,7 +2305,7 @@ public class WheelView<T> extends View implements Runnable {
          * @param data      选中的数据
          * @param position  选中的下标
          */
-        void onItemSelected(WheelView<T> wheelView, T data, int position);
+        void onItemSelected(TimeSpannedWheelView<T> wheelView, T data, int position);
     }
 
     /**
@@ -2337,87 +2339,10 @@ public class WheelView<T> extends View implements Runnable {
          * WheelView 滚动状态
          *
          * @param state 滚动状态
-         *              {@link WheelView#SCROLL_STATE_IDLE}
-         *              {@link WheelView#SCROLL_STATE_DRAGGING}
-         *              {@link WheelView#SCROLL_STATE_SCROLLING}
+         *              {@link TimeSpannedWheelView#SCROLL_STATE_IDLE}
+         *              {@link TimeSpannedWheelView#SCROLL_STATE_DRAGGING}
+         *              {@link TimeSpannedWheelView#SCROLL_STATE_SCROLLING}
          */
         void onWheelScrollStateChanged(int state);
-    }
-
-    /**
-     * SoundPool 辅助类
-     */
-    private static class SoundHelper {
-
-        private SoundPool mSoundPool;
-        private int mSoundId;
-        private float mPlayVolume;
-
-        @SuppressWarnings("deprecation")
-        private SoundHelper() {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                mSoundPool = new SoundPool.Builder().build();
-            } else {
-                mSoundPool = new SoundPool(1, AudioManager.STREAM_SYSTEM, 1);
-            }
-        }
-
-        /**
-         * 初始化 SoundHelper
-         *
-         * @return SoundHelper 对象
-         */
-        static SoundHelper obtain() {
-            return new SoundHelper();
-        }
-
-        /**
-         * 加载音频资源
-         *
-         * @param context 上下文
-         * @param resId   音频资源 {@link RawRes}
-         */
-        void load(Context context, @RawRes int resId) {
-            if (mSoundPool != null) {
-                mSoundId = mSoundPool.load(context, resId, 1);
-            }
-        }
-
-        /**
-         * 设置音量
-         *
-         * @param playVolume 音频播放音量 range 0.0-1.0
-         */
-        void setPlayVolume(@FloatRange(from = 0.0, to = 1.0) float playVolume) {
-            this.mPlayVolume = playVolume;
-        }
-
-        /**
-         * 获取音量
-         *
-         * @return 音频播放音量 range 0.0-1.0
-         */
-        float getPlayVolume() {
-            return mPlayVolume;
-        }
-
-        /**
-         * 播放声音效果
-         */
-        void playSoundEffect() {
-            if (mSoundPool != null && mSoundId != 0) {
-                mSoundPool.play(mSoundId, mPlayVolume, mPlayVolume, 1, 0, 1);
-            }
-        }
-
-        /**
-         * 释放SoundPool
-         */
-        void release() {
-            if (mSoundPool != null) {
-                mSoundPool.release();
-                mSoundPool = null;
-            }
-        }
     }
 }

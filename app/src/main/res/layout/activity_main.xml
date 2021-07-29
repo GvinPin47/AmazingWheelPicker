@@ -16,15 +16,14 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:gravity="center"
         android:orientation="horizontal">
-        <com.test.testwheelviewlib.WheelView
+        <com.test.testwheelviewlib.TimeSpannedWheelView
             android:id="@+id/hoursWheelView"
             android:layout_width="wrap_content"
-            android:layout_marginEnd="45dp"
             android:layout_height="wrap_content"/>
 
         <com.test.testwheelviewlib.WheelView
             android:id="@+id/minutesWheelView"
-            android:layout_width="100dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"/>
     </LinearLayout>
 
