@@ -16,7 +16,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         android:gravity="center"
         android:orientation="horizontal">
-        <com.test.testwheelviewlib.TimeSpannedWheelView
+        <com.test.testwheelviewlib.WheelView
             android:id="@+id/hoursWheelView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"/>

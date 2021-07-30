@@ -23,7 +23,7 @@ open class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         val pickedTimeTextView = findViewById<TextView>(R.id.pickedTimeTextView)
-        val hoursWheelView = findViewById<TimeSpannedWheelView<CharSequence>>(R.id.hoursWheelView)
+        val hoursWheelView = findViewById<WheelView<CharSequence>>(R.id.hoursWheelView)
         val minutesWheelView = findViewById<WheelView<String>>(R.id.minutesWheelView)
 
         val itemsHours = listOf(
@@ -94,6 +94,8 @@ open class MainActivity : AppCompatActivity() {
         spString.setSpan(ForegroundColorSpan(ContextCompat.getColor(this@MainActivity, R.color.test_color)), 0, this.length, SPAN_INCLUSIVE_INCLUSIVE)
         return spString
     }
+
+
 
     private fun Float.spToPx() : Int = (this * resources.displayMetrics.scaledDensity).toInt()
 }

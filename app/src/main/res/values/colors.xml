@@ -9,6 +9,7 @@
     <color name="white">#FFFFFFFF</color>
 
     <color name="test_color_with_alpha_50">#80656573</color>
+    <color name="test_color_with_alpha_20">#33656573</color>
     <color name="test_color">#656573</color>
 
     <color name="test1_selected_color">#333333</color>
